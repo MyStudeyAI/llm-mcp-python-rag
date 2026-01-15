@@ -26,3 +26,10 @@ def log_title(message: str):
     text.append(border[start_pos + len(padded_message):], style=Style(color="green"))
     
     console.print(text)
+
+
+# 使用示例
+if __name__ == "__main__":
+    log_title("Hello, World!")
+    log_title("应用程序启动")
+    log_title("数据库连接成功")
