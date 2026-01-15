@@ -1,8 +1,9 @@
-from ChatOpenAI import example 
+import asyncio
+from MCPClient import example 
 
-def main():
-    example()
+async def main():
+    await example()
    
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
