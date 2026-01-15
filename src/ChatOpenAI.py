@@ -14,19 +14,18 @@ load_dotenv()
 class ToolCall:
     """工具调用类"""
     def __init__(self, id: str, function_name: str, function_arg: str):
-        self.__id = id
-        self.__function = {
-            "name" : function_name,
-            "arguments":function_arg
+        self.id = id
+        self.function = {
+            "name": function_name,
+            "arguments": function_arg
         }
     
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典格式"""
         return {
-            "id": self.__id,
-            "function": self.__function
+            "id": self.id,
+            "function": self.function
         }
-    
 
 
 class ChatOpenAI:
@@ -43,21 +42,20 @@ class ChatOpenAI:
             context: 上下文
         """
         self.__llm = OpenAI(
-            api_key= os.getenv("ALIBABA_KEY"),
-            base_url= os.getenv("ALIBABA_BASE_URL")
+            api_key=os.getenv("ALIBABA_KEY"),
+            base_url=os.getenv("ALIBABA_BASE_URL")
         )
 
         # 初始化一下
         self.__model = model
         self.__tools = tools or []
         self.__messages = []
-        if system_prompt :
-            self.messages.append({"role": "system", "content": system_prompt})
+        if system_prompt:
+            self.__messages.append({"role": "system", "content": system_prompt})
         if context:
-            self.messages.append({"role": "user", "content": context})
+            self.__messages.append({"role": "user", "content": context})
 
-    
-    async def chat(self, prompt:str = None) -> Dict[str, Any]:
+    def chat(self, prompt: str = None) -> Dict[str, Any]:
         """
         发送聊天请求并处理流式响应
         
@@ -69,19 +67,30 @@ class ChatOpenAI:
         """
         log_title('CHAT')
         if prompt:
-            self.__messages.append({"role": "system", "content": prompt})
+            self.__messages.append({"role": "user", "content": prompt})
+
         
-        __strem = await self.__llm.responses.create(
-            model=self.__model, 
-            messages=self.__messages,
-            stream=True,
-            tools= self._getToolsDefinition(), # MCP的tool --> openAI的tool
-        )
+        # 准备 API 调用参数
+        create_params = {
+            "model": self.__model,
+            "messages": self.__messages,
+            "stream": True,
+        }
+
+         # 只有有工具时才添加 tools 参数
+        if self.__tools:
+            create_params["tools"] = self.__get_tools_definition() # MCP的tool --> openAI的tool
+    
+        __stream = self.__llm.chat.completions.create(**create_params)
 
         __content = ''
         __tool_calls: List[ToolCall] = []
-        log_title('RESPONES')
-        for __chunk in __strem:
+        
+        # 用于存储流式工具调用的中间状态
+        __tool_call_chunks = []
+        
+        log_title('RESPONSE')
+        for __chunk in __stream:
             if not __chunk.choices:
                 continue
 
@@ -89,71 +98,74 @@ class ChatOpenAI:
 
             # 处理普通内容
             if __delta.content:
-                content_chunk = __delta.content or ""
-                content += content_chunk
-                sys.stdout.write(content_chunk)
+                __content_chunk = __delta.content or ""
+                __content += __content_chunk
+                sys.stdout.write(__content_chunk)
                 sys.stdout.flush()
 
             # 处理工具调用
             if __delta.tool_calls:
                 for __tool_call_chunk in __delta.tool_calls:
-                    index = __tool_call_chunk.index
-
-                    # 如果是新的工具调用,创建新的中间状态
-                    if len(__tool_call_chunk) <= index:
-                        __tool_call_chunk.append({"id": "", "function_name": "", "arguments": ""})
-
-
-                    __current_call = __tool_call_chunk[index]
-
+                    __index = __tool_call_chunk.index
+                    
+                    # 确保有足够的空间存储工具调用
+                    while len(__tool_call_chunks) <= __index:
+                        __tool_call_chunks.append({
+                            "id": "",
+                            "name": "",
+                            "arguments": ""
+                        })
+                    
+                    # 更新工具调用信息
                     if __tool_call_chunk.id:
-                        __current_call["id"] += __tool_call_chunk.id
+                        __tool_call_chunks[__index]["id"] = __tool_call_chunk.id
                     
                     if __tool_call_chunk.function and __tool_call_chunk.function.name:
-                        __current_call["function_name"] += __tool_call_chunk.function.name
+                        __tool_call_chunks[__index]["name"] = __tool_call_chunk.function.name
                     
                     if __tool_call_chunk.function and __tool_call_chunk.function.arguments:
-                        __current_call["arguments"] += __tool_call_chunk.function.arguments
+                        __tool_call_chunks[__index]["arguments"] += __tool_call_chunk.function.arguments
 
+        # 将收集到的工具调用转换为 ToolCall 对象
+        for __tool_data in __tool_call_chunks:
+            if __tool_data["id"] and __tool_data["name"]:
+                try:
+                    # 尝试解析参数以确保 JSON 有效性
+                    json.loads(__tool_data["arguments"])
+                except json.JSONDecodeError:
+                    # 如果参数不是有效的 JSON，将其包装为字符串
+                    __tool_data["arguments"] = json.dumps({"input": __tool_data["arguments"]})
+                
+                __tool_calls.append(ToolCall(
+                    id=__tool_data["id"],
+                    function_name=__tool_data["name"],
+                    function_arg=__tool_data["arguments"]
+                ))
 
-        # 清理工具调用参数，确保 JSON 有效性
-        self.__messages.append({
-            "role": "assistant",
-            "content": __content,
-            "tool_calls": [
-                {
-                    "type": "function",
-                    "id": __tool_call.id,
-                    "function": {
-                        "name": __tool_call.function.name,
-                        "arguments": __tool_call.function.arguments,
-                    },
-                }
-                for __tool_call in __tool_calls
-            ],
-        })
-        # self.__messages.append({
-        #     "role": "assistant",
-        #     "content": __content,
-        #     "tool_calls": [
-        #         {
-        #             "type":'function'
-        #             "id": __tool_call.id,
-        #             "function": {
-        #                 "name": __tool_call.function.name,
-        #                 "arguments": __tool_call.function.arguments,
-        #             },
-        #         }
-        #         for __tool_call in __tool_calls
-        #     ],
-        # })
+        # 更新消息历史
+        if __tool_calls:
+            self.__messages.append({
+                "role": "assistant",
+                "content": __content,
+                "tool_calls": [
+                    {
+                        "id": __tc.id,
+                        "function": __tc.function,
+                        "type": "function"
+                    }
+                    for __tc in __tool_calls
+                ]
+            })
+        elif __content:  # 只有内容没有工具调用
+            self.__messages.append({
+                "role": "assistant",
+                "content": __content
+            })
 
-        return { __content, __tool_calls }
-            
-
+        return {"content": __content, "toolCalls": [__tc.to_dict() for __tc in __tool_calls]}
 
     # 工具结果 ---> tool_message
-    def append_tool_result(self, tool_call_id: str, tool_out_put: str):
+    def append_tool_result(self, tool_call_id: str, tool_output: str):
         """
         将工具执行结果添加到消息历史
         
@@ -161,76 +173,52 @@ class ChatOpenAI:
             tool_call_id: 工具调用 ID
             tool_output: 工具执行结果
         """
-        self.__messages.append({"role":'tool', "content": tool_out_put, "tool_call_id": tool_call_id})
+        self.__messages.append({
+            "role": 'tool',
+            "content": tool_output,
+            "tool_call_id": tool_call_id
+        })
 
-
-    def _getToolsDefinition(self) -> Dict[str,Any]:
+    def __get_tools_definition(self) -> List[Dict[str, Any]]:
         __result = []
-        for _tool in self.__tools:
+        for __tool in self.__tools:
+            # 将 MCP 工具格式转换为 OpenAI 格式
+            __function_def = {
+                "name": __tool["name"],
+                "description": __tool.get("description", ""),
+                "parameters": __tool.get("inputSchema", {})
+            }
             __result.append({
-                type: 'function',
-                function: _tool,
+                "type": 'function',
+                "function": __function_def
             })
         return __result
+    
+    def get_messages(self) -> List[Dict[str, Any]]:
+        """获取消息历史"""
+        return self.__messages.copy()
 
 
 def example():
-    # 定义一些示例工具
-    example_tools = [
-        {
-            "name": "get_weather",
-            "description": "获取天气信息",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "location": {
-                        "type": "string",
-                        "description": "城市名称"
-                    },
-                    "unit": {
-                        "type": "string",
-                        "enum": ["celsius", "fahrenheit"],
-                        "description": "温度单位"
-                    }
-                },
-                "required": ["location"]
-            }
-        }
-    ]
-    
     # 创建聊天实例
     chat = ChatOpenAI(
         model="glm-4.7",
-        system_prompt="你是一个有用的助手",
-        tools=example_tools
+        system_prompt="你是一个有用的助手"
     )
     
     # 发送消息
     response = chat.chat("今天北京天气怎么样？")
     
+    print(f"\n助理回复: {response['content']}")
+    
     # 如果有工具调用，模拟执行并添加结果
     if response["toolCalls"]:
-        for tool_call in response["toolCalls"]:
-            print(f"\n调用工具: {tool_call['function']['name']}")
-            print(f"参数: {tool_call['function']['arguments']}")
-            
-            # 模拟工具执行结果
-            tool_output = json.dumps({
-                "temperature": 25,
-                "condition": "晴朗",
-                "humidity": "60%"
-            })
-            
-            # 添加工具执行结果
-            chat.append_tool_result(tool_call["id"], tool_output)
-        
         # 继续对话
         print("\n工具执行完成，继续对话...")
         response2 = chat.chat("谢谢，告诉我湿度是多少？")
+        print(f"助理回复: {response2['content']}")
     
     print(f"\n最终消息历史长度: {len(chat.get_messages())}")
-
-
 
 
 # 使用示例
