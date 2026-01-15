@@ -1,5 +1,7 @@
 import asyncio
 from contextlib import AsyncExitStack
+from pathlib import Path
+import shlex
 from typing import List, Optional
 from mcp import ClientSession, StdioServerParameters, Tool
 from mcp.client.stdio import stdio_client
@@ -35,7 +37,7 @@ class MCPClient:
         self.__command = command
         self.__args = args
         self.__version = version or "0.0.1"
-        self.__tools: List[Tool] = []
+        self.__tools = []
 
     
     async def close(self):
@@ -82,33 +84,28 @@ class MCPClient:
 
 
 async def example():
-    # for mcp_name, cmd in [
-    #     (
-    #         "filesystem",
-    #         f"npx -y @modelcontextprotocol/server-filesystem {PROJECT_ROOT_DIR!s}",
-    #     ),
-    #     (
-    #         "fetch",
-    #         "uvx mcp-server-fetch",
-    #     ),
-    # ]:
-    #     log_title(mcp_name)
-    #     command, *args = shlex.split(cmd)
-    #     mcp_client = MCPClient(
-    #         name=mcp_name,
-    #         command=command,
-    #         args=args,
-    #     )
-    #     await mcp_client.init()
-    #     tools = mcp_client.get_tools()
-    #     log_title(tools)
-    #     await mcp_client.close()
-
-    mcp_client = MCPClient('fetch','uvx',['mcp-server-fetch'])
-    await mcp_client.init()
-    tools = mcp_client.get_tools()
-    log_title(tools)
-    await mcp_client.close()
+    project_root_dir = Path(__file__).parent.parent
+    for mcp_name, cmd in [
+        (
+            "filesystem",
+            f"npx -y @modelcontextprotocol/server-filesystem {project_root_dir!s}",
+        ),
+        (
+            "fetch",
+            "uvx mcp-server-fetch",
+        ),
+    ]:
+        log_title(mcp_name)
+        command, *args = shlex.split(cmd)
+        mcp_client = MCPClient(
+            name=mcp_name,
+            command=command,
+            args=args,
+        )
+        await mcp_client.init()
+        tools = mcp_client.get_tools()
+        log_title(tools)
+        await mcp_client.close()
 
 
 
