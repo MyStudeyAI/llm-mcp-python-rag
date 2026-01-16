@@ -47,7 +47,13 @@ class Agent:
         """关闭所有MCP客户端连接"""
         log_title("CLOSE MCP CLIENTS")
         for __client in self.__mcp_clients:
-            await __client.close()
+            try:
+                if hasattr(__client, 'close'):
+                    # 添加延迟，避免并发关闭问题
+                    await asyncio.sleep(0.1)
+                    await __client.close()
+            except Exception as e:
+                print(f"Warning: Error closing client {__client.__name if hasattr(__client, '__name') else 'unknown'}: {e}")
     
 
     async def invoke(self, prompt: str) -> str:
@@ -77,31 +83,53 @@ class Agent:
                     __tool_args = __tool_call.get("function", {}).get("arguments", "")
 
                     __mcp_client = None
+                    __tool_found = False
                     for __client in self.__mcp_clients:
                         tools = __client.get_tools()
                         if tools:
                             for __tool in tools:
                                 if __tool.name == __tool_name:
                                     __mcp_client = __client
+                                    __tool_found = True
                                     break
-                        if __mcp_client:
+                        if __tool_found:
                             break
 
-                    
+
                     if __mcp_client:
                         log_title(f"TOOL USE {__tool_name}")
                         print(f"Calling tool: {__tool_name} with arguments:")
                         print(f"Raw arguments: {__tool_args}")
-
-                        __result = await __mcp_client.call_tool(__tool_name, json.loads(__tool_args))
-                        print(f"Tool result: {__result}")
-
-                        # 将工具调用结果传回LLM
-                        self.__llm.append_tool_result(__tool_call["id"], json.dumps(__result))
+                        
+                        try:
+                            # 解析参数
+                            parsed_args = json.loads(__tool_args)
+                            __result = await __mcp_client.call_tool(__tool_name, parsed_args)
+                            print(f"Tool result type: {type(__result)}")
+                            print(f"Tool result: {__result}")
+                            
+                            # 确保结果是可序列化的
+                            if isinstance(__result, dict):
+                                result_str = json.dumps(__result)
+                            else:
+                                # 尝试转换为字典或字符串
+                                result_str = json.dumps({"raw_result": str(__result)})
+                            
+                            # 将工具调用结果传回LLM
+                            self.__llm.append_tool_result(__tool_call["id"], result_str)
+                            
+                        except json.JSONDecodeError as e:
+                            error_msg = f"Error parsing tool arguments: {e}"
+                            print(error_msg)
+                            self.__llm.append_tool_result(__tool_call["id"], json.dumps({"error": error_msg}))
+                        except Exception as e:
+                            error_msg = f"Error calling tool: {e}"
+                            print(error_msg)
+                            self.__llm.append_tool_result(__tool_call["id"], json.dumps({"error": error_msg}))
                     else:
-                        self.__llm.append_tool_result(__tool_call["id"], f"Error: No MCPClient found for tool: {__tool_name}")
-
-                        raise ValueError(f"No MCPClient found for tool: {__tool_name}")
+                        error_msg = f"Error: No MCPClient found for tool: {__tool_name}"
+                        self.__llm.append_tool_result(__tool_call["id"], json.dumps({"error": error_msg}))
+                        print(error_msg)
                     
                 __response = await self.__llm.chat()
 
@@ -144,7 +172,7 @@ async def example():
     )
     await agent.init()
     resp = await agent.invoke(
-        f"爬取 https://news.ycombinator.com 的内容, 并且总结后保存在 {project_root_dir / 'output' / 'step3-agent-with-mcp'!s} 目录下的news.md文件中"
+        f"爬取 https://news.ycombinator.com 的内容, 并且总结后保存在 {project_root_dir / 'output'!s} 目录下的news.md文件中"
     )
     log_title(resp)
 

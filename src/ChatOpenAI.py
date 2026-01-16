@@ -13,7 +13,7 @@ load_dotenv()
 
 class ToolCall:
     """工具调用类"""
-    def __init__(self, id: str, function_name: str, function_arg: str):
+    def __init__(self, id: str = "", function_name: str = "", function_arg: str = ""):
         self.id = id
         self.function = {
             "name": function_name,
@@ -86,9 +86,6 @@ class ChatOpenAI:
         __content = ''
         __tool_calls: List[ToolCall] = []
         
-        # 用于存储流式工具调用的中间状态
-        __tool_call_chunks = []
-        
         log_title('RESPONSE')
         for __chunk in __stream:
             if not __chunk.choices:
@@ -109,38 +106,25 @@ class ChatOpenAI:
                     __index = __tool_call_chunk.index
                     
                     # 确保有足够的空间存储工具调用
-                    while len(__tool_call_chunks) <= __index:
-                        __tool_call_chunks.append({
-                            "id": "",
-                            "name": "",
-                            "arguments": ""
-                        })
+                    if len(__tool_calls) <= __index:
+                        __tool_calls.append(ToolCall())
+                    
+                    __current_call = __tool_calls[__index]
                     
                     # 更新工具调用信息
                     if __tool_call_chunk.id:
-                        __tool_call_chunks[__index]["id"] = __tool_call_chunk.id
-                    
-                    if __tool_call_chunk.function and __tool_call_chunk.function.name:
-                        __tool_call_chunks[__index]["name"] = __tool_call_chunk.function.name
-                    
-                    if __tool_call_chunk.function and __tool_call_chunk.function.arguments:
-                        __tool_call_chunks[__index]["arguments"] += __tool_call_chunk.function.arguments
+                        __current_call.id += __tool_call_chunk.id
 
-        # 将收集到的工具调用转换为 ToolCall 对象
-        for __tool_data in __tool_call_chunks:
-            if __tool_data["id"] and __tool_data["name"]:
-                try:
-                    # 尝试解析参数以确保 JSON 有效性
-                    json.loads(__tool_data["arguments"])
-                except json.JSONDecodeError:
-                    # 如果参数不是有效的 JSON，将其包装为字符串
-                    __tool_data["arguments"] = json.dumps({"input": __tool_data["arguments"]})
-                
-                __tool_calls.append(ToolCall(
-                    id=__tool_data["id"],
-                    function_name=__tool_data["name"],
-                    function_arg=__tool_data["arguments"]
-                ))
+                    if __tool_call_chunk.function:
+                        if __tool_call_chunk.function.name:
+                            __current_call.function["name"] += (__tool_call_chunk.function.name or "")
+                        
+                        if __tool_call_chunk.function.arguments:
+                            # 检查 arguments 是否为空对象 '{}'，如果是空的就不追加
+                            __arguments_chunk = __tool_call_chunk.function.arguments or ""
+                            if __arguments_chunk.strip() != "{}" or not __current_call.function["arguments"]:
+                                __current_call.function["arguments"] += __arguments_chunk
+
 
         # 更新消息历史
         if __tool_calls:

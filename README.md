@@ -13,7 +13,22 @@
    - 阅读网页 → 整理一份总结 → 保存到文件
    - 本地文档 → 查询相关资料 → 注入上下文
 
-## **The augmented LLM**
+## 系统架构
+```mermaid
+graph TD
+    A[用户] -->|提问| B[Agent]
+    B -->|调用| C[LLM]
+    C -->|生成回答/工具调用| B
+    B -->|工具调用| D[MCP 客户端]
+    D -->|执行| E[MCP 服务器]
+    E -->|文件系统操作| F[文件系统]
+    E -->|网页获取| G[网页内容]
+    H[文档/知识库] -->|嵌入| I[向量存储-内存形式]
+    B -->|查询| I
+    I -->|相关上下文| B
+```
+
+## The augmented LLM
 
 - [Building Effective Agents](https://www.anthropic.com/engineering/building-effective-agents)
 
@@ -74,7 +89,7 @@ classDiagram
     VectorStore --> VectorStoreItem : contains
 ```
 
-## **依赖**
+## 依赖
 
 ```bash
 git clone git@github.com:HQ-YYK/python-uv-template.git
@@ -135,3 +150,30 @@ uv add python-dotenv openai mcp rich
 ![image.png](./images/image3.png)
 
 ![image.png](./images/image4.png)
+
+## RAG 示例流程
+```mermaid
+sequenceDiagram
+    participant User as 用户
+    participant Agent as Agent
+    participant LLM as LLM
+    participant ER as EmbeddingRetriever
+    participant VS as VectorStore
+    participant MCP as MCP客户端
+    participant Logger as ALogger
+
+    User->>Agent: 提供查询
+    Agent->>Logger: 记录操作日志
+    Agent->>ER: 检索相关文档
+    ER->>VS: 查询向量存储
+    VS-->>ER: 返回相关文档
+    ER-->>Agent: 返回上下文
+    Agent->>LLM: 发送查询和上下文
+    LLM-->>Agent: 生成回答或工具调用
+    Agent->>Logger: 记录工具调用
+    Agent->>MCP: 执行工具调用
+    MCP-->>Agent: 返回工具结果
+    Agent->>LLM: 发送工具结果
+    LLM-->>Agent: 生成最终回答
+    Agent-->>User: 返回回答
+```

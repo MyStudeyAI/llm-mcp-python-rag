@@ -16,11 +16,14 @@ file_mcp = MCPClient('file', 'npx', ["-y","@modelcontextprotocol/server-filesyst
 async def main():
     agent = Agent('glm-4.7', [fetch_mcp,file_mcp] ,'你是一个AI助手,请根据用户的问题给出答案')
     await agent.init()
-    response = await agent.invoke(f"爬取https://news.ycombinator.com/的内容，并总结内容保存到${project_root_dir}/assent的news.md文件中，然后告诉我文件的大小是多少字节？");
-
-    print('Final Response from Agent:');
-    print(response);
-    await agent.close();
+    
+    response = await agent.invoke(
+        f"爬取https://news.ycombinator.com/的内容，并总结内容保存到{project_root_dir}/output的news.md文件中，然后告诉我文件的大小是多少字节？"
+    )
+    
+    print('Final Response from Agent:')
+    print(response)
+    await agent.close()
    
    
 
