@@ -71,17 +71,21 @@ class Agent:
         # 这是一个循环,直到没有工具调用为止
         while(True):
             # 处理工具调用
-            if __response.tool_calls and len(__response.tool_calls) > 0:
-                for __tool_call in __response.tool_calls:
-                    __tool_name = __tool_call.function.name if not __tool_call.function.name else ""
-                    __tool_args = __tool_call.function.arguments if not __tool_call.function.arguments else ""
+            if __response["tool_calls"] and len(__response["tool_calls"]) > 0:
+                for __tool_call in __response["tool_calls"]:
+                    __tool_name = __tool_call.get("function", {}).get("name", "")
+                    __tool_args = __tool_call.get("function", {}).get("arguments", "")
 
-                    __mcp_client = []
+                    __mcp_client = None
                     for __client in self.__mcp_clients:
-                        if __client.get_tools():
-                            for __tool in __client.get_tools():
-                                if(__tool.name == __tool_name):
-                                    __mcp_client.extend(__tool)
+                        tools = __client.get_tools()
+                        if tools:
+                            for __tool in tools:
+                                if __tool.name == __tool_name:
+                                    __mcp_client = __client
+                                    break
+                        if __mcp_client:
+                            break
 
                     
                     if __mcp_client:
@@ -93,9 +97,9 @@ class Agent:
                         print(f"Tool result: {__result}")
 
                         # 将工具调用结果传回LLM
-                        self.__llm.append_tool_result(__tool_call.id, json.dump(__result))
+                        self.__llm.append_tool_result(__tool_call["id"], json.dumps(__result))
                     else:
-                        self.__llm.append_tool_result(__tool_call.id, f"Error: No MCPClient found for tool: {__tool_name}")
+                        self.__llm.append_tool_result(__tool_call["id"], f"Error: No MCPClient found for tool: {__tool_name}")
 
                         raise ValueError(f"No MCPClient found for tool: {__tool_name}")
                     
@@ -107,7 +111,7 @@ class Agent:
             # 没有工具调用，返回最终结果
             log_title("FINAL RESPONSE")
             await self.close()
-            return __response.content
+            return __response["content"]
 
 
 

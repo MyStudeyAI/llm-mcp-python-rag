@@ -55,7 +55,7 @@ class ChatOpenAI:
         if context:
             self.__messages.append({"role": "user", "content": context})
 
-    def chat(self, prompt: str = None) -> Dict[str, Any]:
+    async def chat(self, prompt: str = None) -> Dict[str, Any]:
         """
         发送聊天请求并处理流式响应
         
@@ -63,7 +63,7 @@ class ChatOpenAI:
             prompt: 用户输入的提示词
             
         Returns:
-            包含 content 和 toolCalls 的字典
+            包含 content 和 tool_calls 的字典
         """
         log_title('CHAT')
         if prompt:
@@ -162,7 +162,7 @@ class ChatOpenAI:
                 "content": __content
             })
 
-        return {"content": __content, "toolCalls": [__tc.to_dict() for __tc in __tool_calls]}
+        return {"content": __content, "tool_calls": [__tc.to_dict() for __tc in __tool_calls]}
 
     # 工具结果 ---> tool_message
     def append_tool_result(self, tool_call_id: str, tool_output: str):
@@ -182,12 +182,11 @@ class ChatOpenAI:
     def __get_tools_definition(self) -> List[Dict[str, Any]]:
         __result = []
         for __tool in self.__tools:
-            print(f"{__tool},99879655")
             # 将 MCP 工具格式转换为 OpenAI 格式
             __function_def = {
-                "name": __tool["name"],
-                "description": __tool.get("description", ""),
-                "parameters": __tool.get("inputSchema", {})
+                "name": __tool.name,
+                "description": __tool.description or "",
+                "parameters": __tool.inputSchema or {}
             }
             __result.append({
                 "type": 'function',
@@ -213,7 +212,7 @@ def example():
     print(f"\n助理回复: {response['content']}")
     
     # 如果有工具调用，模拟执行并添加结果
-    if response["toolCalls"]:
+    if response["tool_calls"]:
         # 继续对话
         print("\n工具执行完成，继续对话...")
         response2 = chat.chat("谢谢，告诉我湿度是多少？")
