@@ -22,7 +22,7 @@ class MCPClient:
         
         # Initialize session and client objects
         self.__session: Optional[ClientSession] = None
-        self.__exit_stack = AsyncExitStack()
+        self.__exit_stack: Optional[AsyncExitStack] = None
 
         # 不需要anthropic,因为有openai
         # self.anthropic = Anthropic()
@@ -39,27 +39,48 @@ class MCPClient:
         self.__version = version or "0.0.1"
         self.__stdio_transport = None
         self.__tools = []
+        self.__initialized = False
 
     async def close(self):
         """正确关闭所有资源"""
         if self.__exit_stack:
-            await self.__exit_stack.aclose()
+            try:
+                await self.__exit_stack.aclose()
+            except Exception as e:
+                print(f"Warning: Error closing MCP client {self.__name}: {e}")
+        self.__initialized = False
     
     async def init(self):
-        await self.__connect_to_server()
+        """初始化 MCP 客户端"""
+        if not self.__initialized:
+            await self.__connect_to_server()
+            self.__initialized = True
 
     def get_tools(self) -> List[Tool]:
         return self.__tools
     
-    async def call_tool(self, name: str, args: dict[str, Any]) -> dict[str, Any]:
-        """调用工具方法"""
-        if not self.__session:
-            raise RuntimeError("Session not initialized. Call init() first.")
+    async def call_tool(self, tool_name: str, args: dict) -> Any:
+        """
+        调用工具
         
-        # 注意：这里应该是 session.call_tool
-        result = await self.__session.call_tool(name, args)
-        return result
-    
+        Args:
+            tool_name: 工具名称
+            args: 工具参数
+            
+        Returns:
+            工具执行结果
+        """
+        if not self.__session:
+            raise RuntimeError("MCP client not initialized. Call init() first.")
+        
+        try:
+            # 调用工具
+            result = await self.__session.call_tool(tool_name, args)
+            return result.content
+        except Exception as e:
+            print(f"Error calling tool {tool_name}: {e}")
+            raise
+
     async def __connect_to_server(self):
         """连接到 MCP 服务器"""
         
@@ -70,6 +91,9 @@ class MCPClient:
         )
         
         try:
+            # 创建新的 AsyncExitStack
+            self.__exit_stack = AsyncExitStack()
+            
             # 创建 stdio 传输
             stdio_transport = await self.__exit_stack.enter_async_context(
                 stdio_client(server_params)
@@ -142,7 +166,7 @@ async def example():
         # 测试调用工具（如果有的话）
         for client in clients:
             if client.get_tools():
-                print(f"\nTesting tools for {client._MCPClient__name}:")
+                print(f"\nTesting tools for {client.name}:")
                 for tool in client.get_tools():
                     print(f"  - {tool.name}")
     

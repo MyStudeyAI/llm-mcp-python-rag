@@ -48,12 +48,10 @@ class Agent:
         log_title("CLOSE MCP CLIENTS")
         for __client in self.__mcp_clients:
             try:
-                if hasattr(__client, 'close'):
-                    # 添加延迟，避免并发关闭问题
-                    await asyncio.sleep(0.1)
-                    await __client.close()
+                # 直接关闭，不添加延迟
+                await __client.close()
             except Exception as e:
-                print(f"Warning: Error closing client {__client.__name if hasattr(__client, '__name') else 'unknown'}: {e}")
+                print(f"Warning: Error closing client {__client.name if hasattr(__client, 'name') else 'unknown'}: {e}")
     
 
     async def invoke(self, prompt: str) -> str:
@@ -142,7 +140,6 @@ class Agent:
             return __response["content"]
 
 
-
 async def example():
     
     project_root_dir = Path(__file__).parent.parent
@@ -175,6 +172,7 @@ async def example():
         f"爬取 https://news.ycombinator.com 的内容, 并且总结后保存在 {project_root_dir / 'output'!s} 目录下的news.md文件中"
     )
     log_title(resp)
+    await agent.close()
 
 
 if __name__ == "__main__":
