@@ -182,6 +182,7 @@ class ChatOpenAI:
     def __get_tools_definition(self) -> List[Dict[str, Any]]:
         __result = []
         for __tool in self.__tools:
+            print(f"{__tool},99879655")
             # 将 MCP 工具格式转换为 OpenAI 格式
             __function_def = {
                 "name": __tool["name"],
